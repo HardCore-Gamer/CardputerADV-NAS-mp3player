@@ -18,7 +18,11 @@ SMB/CIFS shares such as `\\NAS\music` are not supported by this ESP32 firmware. 
 - WiFi list / file list: `w` and `s` move, `Enter` selects.
 - Text input: type normally, `Backspace` deletes, `Enter` confirms, `Tab` cancels.
 - File list: `r` reloads, `n` edits NAS URL, `t` opens sleep timer.
-- Player: `Space` stops/replays, `n` next, `p` previous, `b` file list, `t` timer, `+`/`-` volume.
+- Player: progress bar + volume bar on screen.
+- Player: `Space` stops/resumes from the saved position.
+- Player: `Fn + ,` seek backward, `Fn + .` seek forward.
+- Player: `<` and `>` also trigger backward/forward seek.
+- Player: `n` next, `p` previous, `b` file list, `t` timer, `+`/`-` volume.
 
 ## Build
 
