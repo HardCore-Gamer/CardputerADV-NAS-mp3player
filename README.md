@@ -18,11 +18,13 @@ SMB/CIFS shares such as `\\NAS\music` are not supported by this ESP32 firmware. 
 - WiFi list / file list: `w` and `s` move, `Enter` selects.
 - Text input: type normally, `Backspace` deletes, `Enter` confirms, `Tab` cancels.
 - File list: `r` reloads, `n` edits NAS URL, `t` opens sleep timer.
-- Player: progress bar + volume bar on screen.
+- Player: progress bar, volume bar, WiFi icon, and battery icon on screen.
 - Player: `Space` stops/resumes from the saved position.
 - Player: `Fn + ,` seek backward, `Fn + .` seek forward.
 - Player: `<` and `>` also trigger backward/forward seek.
-- Player: `n` next, `p` previous, `b` file list, `t` timer, `+`/`-` volume.
+- Player: `+` and `-` change volume.
+- Player: `n` next, `p` previous, `b` file list, `t` timer.
+- Player: `m` toggles eco mode.
 
 ## Build
 
@@ -34,4 +36,10 @@ The M5Launcher app binary is:
 
 ```text
 .pio/build/cardputer_adv_nas_mp3/firmware.bin
+```
+
+A ready-to-copy build is also written to:
+
+```text
+cardputer_adv_nas_mp3.bin
 ```
