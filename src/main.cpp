@@ -20,9 +20,8 @@ namespace {
 
 constexpr int SCREEN_W = 240;
 constexpr int SCREEN_H = 135;
-constexpr int HEADER_H = 18;
-constexpr int FOOTER_H = 16;
-constexpr int ROW_H = 14;
+constexpr int HEADER_H = 20;
+constexpr int FOOTER_H = 15;
 constexpr size_t MAX_LIST_BODY = 96 * 1024;
 constexpr size_t MAX_ENTRIES = 120;
 constexpr uint32_t RESUME_SAVE_INTERVAL_MS = 3000;
@@ -35,19 +34,24 @@ constexpr uint8_t DISPLAY_BRIGHTNESS_ACTIVE = 128;
 constexpr uint8_t DISPLAY_BRIGHTNESS_DIM = 18;
 constexpr uint8_t DISPLAY_BRIGHTNESS_OFF = 0;
 
-constexpr uint16_t C_BG = 0x0000;
-constexpr uint16_t C_PANEL = 0x18C3;
-constexpr uint16_t C_PANEL_ALT = 0x2124;
-constexpr uint16_t C_TEXT = 0xFFFF;
-constexpr uint16_t C_DIM = 0xBDF7;
-constexpr uint16_t C_ACCENT = 0x07FF;
-constexpr uint16_t C_SELECT = 0x03EF;
-constexpr uint16_t C_WARN = 0xFBE0;
-constexpr uint16_t C_ERR = 0xF800;
-constexpr uint16_t C_SOFT = 0x39C7;
-constexpr uint16_t C_GOOD = 0x87F0;
-constexpr uint16_t C_EDGE = 0x31A6;
-constexpr uint16_t C_TRACK = 0x10A2;
+constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
+    return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+constexpr uint16_t C_BG = rgb565(0, 0, 0);
+constexpr uint16_t C_PANEL = rgb565(28, 28, 30);
+constexpr uint16_t C_PANEL_ALT = rgb565(44, 44, 46);
+constexpr uint16_t C_TEXT = rgb565(245, 245, 247);
+constexpr uint16_t C_DIM = rgb565(142, 142, 147);
+constexpr uint16_t C_ACCENT = rgb565(10, 132, 255);
+constexpr uint16_t C_SELECT = rgb565(10, 132, 255);
+constexpr uint16_t C_WARN = rgb565(255, 214, 10);
+constexpr uint16_t C_ERR = rgb565(255, 69, 58);
+constexpr uint16_t C_SOFT = rgb565(72, 72, 74);
+constexpr uint16_t C_GOOD = rgb565(48, 209, 88);
+constexpr uint16_t C_EDGE = rgb565(56, 56, 58);
+constexpr uint16_t C_TRACK = rgb565(44, 44, 46);
+constexpr uint16_t C_ACCENT_DARK = rgb565(0, 64, 128);
 
 struct ParsedUrl {
     bool ok = false;
@@ -459,6 +463,41 @@ bool samePathUrl(const String &a, const String &b) {
     return pa.host == pb.host && pa.port == pb.port && ap == bp;
 }
 
+String cleanUrlPath(String path) {
+    int query = path.indexOf('?');
+    if (query >= 0) {
+        path.remove(query);
+    }
+    int fragment = path.indexOf('#');
+    if (fragment >= 0) {
+        path.remove(fragment);
+    }
+    return path;
+}
+
+bool isDirectChildUrl(const String &baseUrl, const String &targetUrl, bool directory) {
+    ParsedUrl base = parseUrl(baseUrl);
+    ParsedUrl target = parseUrl(targetUrl);
+    if (!base.ok || !target.ok || base.host != target.host || base.port != target.port) {
+        return false;
+    }
+
+    String basePath = cleanUrlPath(base.path);
+    String targetPath = cleanUrlPath(target.path);
+    if (!basePath.endsWith("/")) {
+        basePath += "/";
+    }
+    if (!targetPath.startsWith(basePath) || targetPath == basePath) {
+        return false;
+    }
+
+    String child = targetPath.substring(basePath.length());
+    if (directory && child.endsWith("/")) {
+        child.remove(child.length() - 1);
+    }
+    return !child.isEmpty() && child.indexOf('/') < 0;
+}
+
 bool pathIsMp3(const String &urlOrPath) {
     String low = toLowerCopy(urlOrPath);
     int hash = low.indexOf('#');
@@ -668,13 +707,10 @@ KeyEvent readKeys() {
 }
 
 void drawHeader(const String &title) {
-    int statusX = SCREEN_W - 102;
     M5Cardputer.Display.fillRect(0, 0, SCREEN_W, HEADER_H, C_BG);
-    M5Cardputer.Display.fillRect(0, HEADER_H - 1, SCREEN_W, 1, C_EDGE);
-    M5Cardputer.Display.fillRoundRect(4, 3, 4, 12, 2, C_ACCENT);
     M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
-    M5Cardputer.Display.setCursor(12, 3);
-    M5Cardputer.Display.print(displayFit(title, statusX - 8));
+    M5Cardputer.Display.setCursor(8, 4);
+    M5Cardputer.Display.print(displayFit(title, 126));
 
     bool wifiConnected = WiFi.status() == WL_CONNECTED;
     int wifiBars = getWifiSignalBars();
@@ -682,16 +718,13 @@ void drawHeader(const String &title) {
     bool charging = isBatteryCharging();
     String clock = headerClockText();
 
-    M5Cardputer.Display.fillRoundRect(statusX - 2, 2, SCREEN_W - statusX + 2, 14, 6, C_PANEL_ALT);
-    M5Cardputer.Display.drawRoundRect(statusX - 2, 2, SCREEN_W - statusX + 2, 14, 6, C_EDGE);
-
-    M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL_ALT);
-    M5Cardputer.Display.setCursor(statusX + 4, 3);
+    M5Cardputer.Display.setTextColor(C_DIM, C_BG);
+    M5Cardputer.Display.setCursor(145, 4);
     M5Cardputer.Display.print(clock);
 
-    int wifiX = SCREEN_W - 54;
-    int wifiY = 3;
-    uint16_t wifiColor = wifiConnected ? C_GOOD : C_SOFT;
+    int wifiX = SCREEN_W - 50;
+    int wifiY = 4;
+    uint16_t wifiColor = wifiConnected ? C_TEXT : C_SOFT;
     for (int i = 0; i < 4; ++i) {
         int barH = 3 + i * 2;
         int x = wifiX + i * 4;
@@ -699,17 +732,17 @@ void drawHeader(const String &title) {
         M5Cardputer.Display.fillRect(x, y, 3, barH, i < wifiBars ? wifiColor : C_SOFT);
     }
     if (!wifiConnected) {
-        M5Cardputer.Display.drawLine(wifiX - 1, 12, wifiX + 14, 2, C_ERR);
+        M5Cardputer.Display.drawLine(wifiX - 1, 14, wifiX + 14, 3, C_ERR);
     }
 
-    int batX = SCREEN_W - 26;
-    int batY = 3;
-    int batW = 18;
+    int batX = SCREEN_W - 24;
+    int batY = 4;
+    int batW = 17;
     int batH = 9;
-    M5Cardputer.Display.drawRect(batX, batY, batW, batH, C_DIM);
+    M5Cardputer.Display.drawRoundRect(batX, batY, batW, batH, 2, C_DIM);
     M5Cardputer.Display.fillRect(batX + batW, batY + 2, 2, batH - 4, C_DIM);
     int fillW = ((batW - 3) * battery) / 100;
-    uint16_t batColor = battery > 25 ? (charging ? C_GOOD : C_TEXT) : C_WARN;
+    uint16_t batColor = battery > 25 ? (charging ? C_GOOD : C_DIM) : C_WARN;
     if (battery <= 10) {
         batColor = C_ERR;
     }
@@ -730,31 +763,21 @@ void drawHeader(const String &title) {
 }
 
 void drawFooter(const String &text) {
-    M5Cardputer.Display.fillRect(0, SCREEN_H - FOOTER_H, SCREEN_W, FOOTER_H, C_BG);
-    M5Cardputer.Display.fillRect(0, SCREEN_H - FOOTER_H, SCREEN_W, 1, C_EDGE);
+    int y = SCREEN_H - FOOTER_H;
+    M5Cardputer.Display.fillRect(0, y, SCREEN_W, FOOTER_H, C_BG);
+    M5Cardputer.Display.drawFastHLine(0, y, SCREEN_W, C_EDGE);
+    String shown = displayFit(text, SCREEN_W - 16);
+    int textX = std::max(8, (SCREEN_W - M5Cardputer.Display.textWidth(shown)) / 2);
     M5Cardputer.Display.setTextColor(C_DIM, C_BG);
-    M5Cardputer.Display.setCursor(4, SCREEN_H - FOOTER_H + 3);
-    M5Cardputer.Display.print(displayFit(text, SCREEN_W - 8));
-}
-
-void drawChip(int x, int y, int w, const String &label, uint16_t border, uint16_t fg) {
-    M5Cardputer.Display.fillRoundRect(x, y, w, 14, 5, C_PANEL_ALT);
-    M5Cardputer.Display.drawRoundRect(x, y, w, 14, 5, border);
-    M5Cardputer.Display.setTextColor(fg, C_PANEL_ALT);
-    M5Cardputer.Display.setCursor(x + 5, y + 3);
-    M5Cardputer.Display.print(displayFit(label, w - 10));
-}
-
-void fillPanel(int x, int y, int w, int h, uint16_t fill = C_PANEL, uint16_t border = C_EDGE, int radius = 8) {
-    M5Cardputer.Display.fillRoundRect(x, y, w, h, radius, fill);
-    M5Cardputer.Display.drawRoundRect(x, y, w, h, radius, border);
+    M5Cardputer.Display.setCursor(textX, y + 3);
+    M5Cardputer.Display.print(shown);
 }
 
 void drawMeter(int x, int y, int w, int h, int fillW, uint16_t fillColor) {
-    fillPanel(x, y, w, h, C_TRACK, C_EDGE, h / 2);
-    int innerW = std::max(0, std::min(fillW, w - 4));
+    M5Cardputer.Display.fillRoundRect(x, y, w, h, h / 2, C_TRACK);
+    int innerW = std::max(0, std::min(fillW, w));
     if (innerW > 0) {
-        M5Cardputer.Display.fillRoundRect(x + 2, y + 2, innerW, h - 4, (h - 4) / 2, fillColor);
+        M5Cardputer.Display.fillRoundRect(x, y, innerW, h, h / 2, fillColor);
     }
 }
 
@@ -765,6 +788,30 @@ void drawSignalGlyph(int x, int y, int bars, uint16_t active, uint16_t inactive)
         int barY = y + (9 - barH);
         M5Cardputer.Display.fillRect(barX, barY, 3, barH, i < bars ? active : inactive);
     }
+}
+
+void drawBrandMark(int x, int y, int size) {
+    M5Cardputer.Display.fillRoundRect(x, y, size, size, 9, C_ACCENT_DARK);
+    M5Cardputer.Display.fillRoundRect(x + 3, y + 3, size - 6, size - 6, 7, C_ACCENT);
+    M5Cardputer.Display.drawCircle(x + size / 2, y + size / 2, size / 3, C_TEXT);
+    M5Cardputer.Display.fillCircle(x + size / 2, y + size / 2, 3, C_ACCENT_DARK);
+    M5Cardputer.Display.drawFastVLine(x + size / 2 + size / 4, y + 5, size / 3, C_TEXT);
+}
+
+void drawSurface(int x, int y, int w, int h, uint16_t color = C_PANEL, int radius = 8) {
+    M5Cardputer.Display.fillRoundRect(x, y, w, h, radius, color);
+}
+
+void drawStatusBadge(int x, int y, int w, const String &label, uint16_t color, bool filled = false) {
+    uint16_t bg = filled ? color : C_PANEL;
+    M5Cardputer.Display.fillRoundRect(x, y, w, 14, 7, bg);
+    if (!filled) {
+        M5Cardputer.Display.drawRoundRect(x, y, w, 14, 7, color);
+    }
+    uint16_t fg = filled ? C_BG : color;
+    M5Cardputer.Display.setTextColor(fg, bg);
+    M5Cardputer.Display.setCursor(x + 7, y + 3);
+    M5Cardputer.Display.print(displayFit(label, w - 12));
 }
 
 void showMessage(const String &title, const String &body, uint32_t ms, Screen next) {
@@ -779,12 +826,17 @@ void showMessage(const String &title, const String &body, uint32_t ms, Screen ne
 void drawBusyScreen(const String &title, const String &body) {
     M5Cardputer.Display.fillScreen(C_BG);
     drawHeader(title);
-    fillPanel(14, 34, SCREEN_W - 28, 54, C_PANEL, C_EDGE, 10);
-    M5Cardputer.Display.fillRect(24, 44, 32, 3, C_ACCENT);
+    drawSurface(20, 31, 200, 70);
+    drawBrandMark(31, 45, 38);
     M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-    M5Cardputer.Display.setCursor(24, 56);
-    M5Cardputer.Display.print(displayFit(body, SCREEN_W - 52));
-    drawFooter("wait");
+    M5Cardputer.Display.setCursor(82, 45);
+    M5Cardputer.Display.print(displayFit(body, 125));
+    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
+    M5Cardputer.Display.setCursor(82, 63);
+    M5Cardputer.Display.print("Please wait");
+    for (int i = 0; i < 4; ++i) {
+        M5Cardputer.Display.fillCircle(85 + i * 11, 83, 2, i == 0 ? C_ACCENT : C_SOFT);
+    }
 }
 
 void prepareSingleTrackContext(const String &url) {
@@ -804,12 +856,17 @@ void prepareSingleTrackContext(const String &url) {
 void drawMessage() {
     M5Cardputer.Display.fillScreen(C_BG);
     drawHeader(messageTitle);
-    fillPanel(14, 34, SCREEN_W - 28, 54, C_PANEL, C_EDGE, 10);
-    M5Cardputer.Display.fillRect(24, 44, 32, 3, C_ACCENT);
+    drawSurface(20, 34, 200, 62);
+    M5Cardputer.Display.fillCircle(42, 65, 11, C_ACCENT);
+    M5Cardputer.Display.setTextColor(C_TEXT, C_ACCENT);
+    M5Cardputer.Display.setCursor(39, 59);
+    M5Cardputer.Display.print("i");
     M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-    M5Cardputer.Display.setCursor(24, 56);
-    M5Cardputer.Display.print(displayFit(messageBody, SCREEN_W - 52));
-    drawFooter("wait");
+    M5Cardputer.Display.setCursor(63, 49);
+    M5Cardputer.Display.print(displayFit(messageBody, 145));
+    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
+    M5Cardputer.Display.setCursor(63, 69);
+    M5Cardputer.Display.print("Returning automatically");
     needsRedraw = false;
 }
 
@@ -827,20 +884,6 @@ void beginInput(InputMode mode, const String &title, const String &seed, bool se
 void drawInput() {
     M5Cardputer.Display.fillScreen(C_BG);
     drawHeader(inputTitle);
-    fillPanel(8, 24, SCREEN_W - 16, 94, C_PANEL, C_EDGE, 10);
-    M5Cardputer.Display.fillRect(18, 32, 48, 3, C_ACCENT);
-    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
-    M5Cardputer.Display.setCursor(18, 42);
-    if (inputMode == InputMode::NasUrl) {
-        M5Cardputer.Display.print("HTTP/WebDAV URL");
-    } else if (inputMode == InputMode::WifiPassword) {
-        M5Cardputer.Display.print(pendingSsid);
-    } else if (inputMode == InputMode::FileSearch) {
-        M5Cardputer.Display.print("Filter current folder");
-    } else {
-        M5Cardputer.Display.print("Manual SSID");
-    }
-
     String shown = inputText;
     if (inputSecret) {
         shown = "";
@@ -848,21 +891,35 @@ void drawInput() {
             shown += '*';
         }
     }
-    fillPanel(18, 56, SCREEN_W - 36, 24, C_BG, C_SOFT, 6);
-    M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
-    M5Cardputer.Display.setCursor(24, 62);
-    M5Cardputer.Display.print(tailFit(shown, SCREEN_W - 56));
+
+    drawSurface(8, 27, 224, 82);
+    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
+    M5Cardputer.Display.setCursor(18, 35);
+    if (inputMode == InputMode::WifiPassword) {
+        M5Cardputer.Display.print(displayFit(pendingSsid, 204));
+    } else if (inputMode == InputMode::NasUrl) {
+        M5Cardputer.Display.print("HTTP / WebDAV address");
+    } else if (inputMode == InputMode::FileSearch) {
+        M5Cardputer.Display.print("Search this folder");
+    } else {
+        M5Cardputer.Display.print("Network name");
+    }
+    M5Cardputer.Display.fillRoundRect(16, 52, 208, 27, 7, C_PANEL_ALT);
+    M5Cardputer.Display.drawRoundRect(16, 52, 208, 27, 7, C_ACCENT);
+    M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL_ALT);
+    M5Cardputer.Display.setCursor(25, 60);
+    M5Cardputer.Display.print(tailFit(shown, 190));
 
     M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
-    M5Cardputer.Display.setCursor(18, 91);
+    M5Cardputer.Display.setCursor(18, 89);
     if (inputMode == InputMode::NasUrl) {
-        M5Cardputer.Display.print("Example: http://nas:5005/music/");
+        M5Cardputer.Display.print(displayFit("Example: http://nas:5005/music/", 204));
     } else if (inputMode == InputMode::FileSearch) {
-        M5Cardputer.Display.print("Enter apply   Tab clear");
+        M5Cardputer.Display.print("Enter apply / Tab clear");
     } else {
-        M5Cardputer.Display.print("Saved after successful connect");
+        M5Cardputer.Display.print("Saved after connection");
     }
-    drawFooter("Enter confirm   Tab back");
+    drawFooter("Enter Done     Tab Back");
     needsRedraw = false;
 }
 
@@ -1174,6 +1231,9 @@ String readHttpBody(HTTPClient &http, size_t maxBytes) {
 
 void addEntryIfUseful(const String &baseUrl, String href, bool forceDir) {
     href = xmlHtmlDecode(trimCopy(href));
+    while (href.startsWith("./")) {
+        href.remove(0, 2);
+    }
     if (href.isEmpty()) {
         return;
     }
@@ -1187,6 +1247,9 @@ void addEntryIfUseful(const String &baseUrl, String href, bool forceDir) {
     bool dir = forceDir || joined.endsWith("/");
     bool mp3File = pathIsMp3(joined);
     if (!dir && !mp3File) {
+        return;
+    }
+    if (!isDirectChildUrl(baseUrl, joined, dir)) {
         return;
     }
     if (dir && samePathUrl(joined, baseUrl)) {
@@ -1220,8 +1283,19 @@ void parseHtmlListing(const String &baseUrl, const String &body) {
         if (href < 0) {
             break;
         }
+        int tagStart = lower.lastIndexOf('<', href);
+        int tagEnd = lower.indexOf('>', href);
+        if (tagStart < 0 || tagEnd < 0) {
+            break;
+        }
+        String tagName = lower.substring(tagStart + 1, href);
+        tagName.trim();
+        if (!(tagName == "a" || tagName.startsWith("a "))) {
+            pos = href + 4;
+            continue;
+        }
         int eq = lower.indexOf('=', href + 4);
-        if (eq < 0) {
+        if (eq < 0 || eq > tagEnd) {
             break;
         }
         int begin = eq + 1;
@@ -1286,10 +1360,46 @@ void parseWebDavListing(const String &baseUrl, const String &body) {
         }
         int afterHref = 0;
         String href = extractHrefTag(body, lower, lt, afterHref);
-        int nextHref = lower.indexOf("href", afterHref);
-        int blockEnd = nextHref >= 0 ? nextHref : std::min<int>(afterHref + 700, body.length());
-        String block = lower.substring(lt, blockEnd);
-        bool isDir = block.indexOf("collection") >= 0 || href.endsWith("/");
+        int responseStart = -1;
+        int search = lt - 1;
+        while (search >= 0) {
+            int open = lower.lastIndexOf('<', search);
+            if (open < 0) {
+                break;
+            }
+            int close = lower.indexOf('>', open + 1);
+            if (close < 0 || close > lt) {
+                search = open - 1;
+                continue;
+            }
+            String tagName = lower.substring(open + 1, close);
+            tagName.trim();
+            int space = tagName.indexOf(' ');
+            if (space >= 0) {
+                tagName.remove(space);
+            }
+            if (!tagName.startsWith("/") && (tagName == "response" || tagName.endsWith(":response"))) {
+                responseStart = open;
+                break;
+            }
+            search = open - 1;
+        }
+
+        int responseEnd = -1;
+        if (responseStart >= 0) {
+            int nameStart = responseStart + 1;
+            int nameEnd = lower.indexOf('>', nameStart);
+            String responseName = lower.substring(nameStart, nameEnd);
+            int space = responseName.indexOf(' ');
+            if (space >= 0) {
+                responseName.remove(space);
+            }
+            responseEnd = lower.indexOf("</" + responseName, afterHref);
+        }
+        int blockEnd = responseEnd >= 0 ? responseEnd : std::min<int>(afterHref + 700, body.length());
+        int blockStart = responseStart >= 0 ? responseStart : lt;
+        String block = lower.substring(blockStart, blockEnd);
+        bool isDir = block.indexOf("collection") >= 0;
         addEntryIfUseful(baseUrl, href, isDir);
         pos = afterHref;
     }
@@ -1384,13 +1494,13 @@ bool loadDirectory(const String &rawUrl) {
     }
 
     addParentEntry(url);
-    bool ok = fetchHttpListing(url);
+    bool ok = fetchWebDavListing(url);
     if (!ok || entries.size() <= 1) {
         entries.erase(std::remove_if(entries.begin(), entries.end(), [](const FileEntry &entry) {
                           return !entry.parent;
                       }),
                       entries.end());
-        ok = fetchWebDavListing(url);
+        ok = fetchHttpListing(url);
     }
     sortEntries();
     allEntries = entries;
@@ -1400,15 +1510,13 @@ bool loadDirectory(const String &rawUrl) {
 
 void drawWifiList() {
     M5Cardputer.Display.fillScreen(C_BG);
-    drawHeader("WiFi");
-    fillPanel(8, 24, SCREEN_W - 16, 94, C_PANEL, C_EDGE, 10);
-    drawChip(16, 30, 66, savedSsid.isEmpty() ? "No saved" : "Saved", savedSsid.isEmpty() ? C_SOFT : C_GOOD,
-             savedSsid.isEmpty() ? C_DIM : C_GOOD);
-    drawChip(88, 30, 72, String(wifiItems.size()) + " nets", C_SOFT, C_TEXT);
-    drawChip(166, 30, 58, "r scan", C_ACCENT, C_ACCENT);
-    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
-    M5Cardputer.Display.setCursor(16, 48);
-    M5Cardputer.Display.print(savedSsid.isEmpty() ? "Select a network" : displayFit(savedSsid, SCREEN_W - 32));
+    drawHeader("Wi-Fi");
+    M5Cardputer.Display.setTextColor(C_DIM, C_BG);
+    M5Cardputer.Display.setCursor(9, 25);
+    M5Cardputer.Display.print(savedSsid.isEmpty() ? "Choose a network"
+                                                  : displayFit("Saved: " + savedSsid, 176));
+    M5Cardputer.Display.setCursor(198, 25);
+    M5Cardputer.Display.print(String(wifiItems.size()));
 
     int visible = 4;
     if (wifiSelected < wifiScrollTop) {
@@ -1423,11 +1531,11 @@ void drawWifiList() {
         if (idx >= static_cast<int>(wifiItems.size())) {
             break;
         }
-        int y = 58 + row * 14;
+        int y = 40 + row * 19;
         bool sel = idx == wifiSelected;
-        fillPanel(14, y, SCREEN_W - 28, 12, sel ? C_SELECT : C_PANEL_ALT, sel ? C_SELECT : C_EDGE, 5);
-        uint16_t rowBg = sel ? C_SELECT : C_PANEL_ALT;
-        uint16_t fg = sel ? C_BG : C_TEXT;
+        uint16_t rowBg = sel ? C_SELECT : C_PANEL;
+        M5Cardputer.Display.fillRoundRect(8, y, 224, 17, 7, rowBg);
+        uint16_t fg = sel ? C_TEXT : C_TEXT;
         String label;
         if (wifiItems[idx].manual) {
             label = "Manual SSID";
@@ -1437,36 +1545,38 @@ void drawWifiList() {
             label = wifiItems[idx].ssid;
         }
         M5Cardputer.Display.setTextColor(fg, rowBg);
-        M5Cardputer.Display.setCursor(20, y + 2);
-        M5Cardputer.Display.print(displayFit(label, SCREEN_W - 110));
+        M5Cardputer.Display.setCursor(17, y + 4);
+        M5Cardputer.Display.print(displayFit(label, 150));
         if (wifiItems[idx].manual) {
-            M5Cardputer.Display.setTextColor(sel ? C_BG : C_ACCENT, rowBg);
-            M5Cardputer.Display.setCursor(172, y + 2);
-            M5Cardputer.Display.print("INPUT");
+            M5Cardputer.Display.setTextColor(sel ? C_TEXT : C_DIM, rowBg);
+            M5Cardputer.Display.setCursor(186, y + 4);
+            M5Cardputer.Display.print("Manual");
         } else if (wifiItems[idx].saved) {
-            M5Cardputer.Display.setTextColor(sel ? C_BG : C_GOOD, rowBg);
-            M5Cardputer.Display.setCursor(172, y + 2);
-            M5Cardputer.Display.print("SAVED");
+            M5Cardputer.Display.fillCircle(209, y + 8, 3, sel ? C_TEXT : C_GOOD);
         } else {
             int bars = wifiItems[idx].rssi >= -55 ? 4 : wifiItems[idx].rssi >= -67 ? 3
                       : wifiItems[idx].rssi >= -75 ? 2
                       : wifiItems[idx].rssi >= -85 ? 1
                                                   : 0;
-            drawSignalGlyph(188, y + 2, bars, sel ? C_BG : C_ACCENT, sel ? C_SOFT : C_TRACK);
+            drawSignalGlyph(201, y + 4, bars, sel ? C_TEXT : C_DIM, sel ? C_ACCENT_DARK : C_TRACK);
         }
     }
-    drawFooter("Enter connect   r rescan   Tab back");
+    drawFooter("Enter Connect     Tab Back");
     needsRedraw = false;
 }
 
 void scanWifi() {
     wakePlayerDisplay();
     M5Cardputer.Display.fillScreen(C_BG);
-    drawHeader("WiFi");
-    fillPanel(20, 40, SCREEN_W - 40, 34, C_PANEL, C_EDGE, 10);
+    drawHeader("Wi-Fi");
+    drawSurface(31, 37, 178, 58);
+    drawSignalGlyph(48, 54, 4, C_ACCENT, C_SOFT);
     M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-    M5Cardputer.Display.setCursor(30, 52);
-    M5Cardputer.Display.print("Scanning...");
+    M5Cardputer.Display.setCursor(80, 51);
+    M5Cardputer.Display.print("Searching for networks");
+    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
+    M5Cardputer.Display.setCursor(80, 70);
+    M5Cardputer.Display.print("Please wait");
     WiFi.mode(WIFI_STA);
     WiFi.disconnect(false, false);
     delay(100);
@@ -1533,14 +1643,14 @@ void afterWifiConnected() {
 bool connectWifi(const String &ssid, const String &pass) {
     wakePlayerDisplay();
     M5Cardputer.Display.fillScreen(C_BG);
-    drawHeader("WiFi");
-    fillPanel(16, 30, SCREEN_W - 32, 72, C_PANEL, C_EDGE, 10);
+    drawHeader("Wi-Fi");
+    drawSurface(24, 32, 192, 72);
     M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
-    M5Cardputer.Display.setCursor(24, 42);
-    M5Cardputer.Display.print("Connecting:");
+    M5Cardputer.Display.setCursor(38, 43);
+    M5Cardputer.Display.print("Connecting to");
     M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-    M5Cardputer.Display.setCursor(24, 56);
-    M5Cardputer.Display.print(displayFit(ssid, SCREEN_W - 48));
+    M5Cardputer.Display.setCursor(38, 61);
+    M5Cardputer.Display.print(displayFit(ssid, 164));
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), pass.c_str());
 
@@ -1550,9 +1660,9 @@ bool connectWifi(const String &ssid, const String &pass) {
         M5Cardputer.update();
         if ((millis() / 350) % 4 != dots) {
             dots = (millis() / 350) % 4;
-            M5Cardputer.Display.fillRect(24, 76, 80, 10, C_PANEL);
+            M5Cardputer.Display.fillRect(38, 81, 80, 10, C_PANEL);
             M5Cardputer.Display.setTextColor(C_ACCENT, C_PANEL);
-            M5Cardputer.Display.setCursor(24, 76);
+            M5Cardputer.Display.setCursor(38, 81);
             for (int i = 0; i < dots; ++i) {
                 M5Cardputer.Display.print(".");
             }
@@ -1563,7 +1673,7 @@ bool connectWifi(const String &ssid, const String &pass) {
     if (WiFi.status() == WL_CONNECTED) {
         syncClockIfNeeded();
         M5Cardputer.Display.setTextColor(C_GOOD, C_PANEL);
-        M5Cardputer.Display.setCursor(24, 88);
+        M5Cardputer.Display.setCursor(128, 81);
         M5Cardputer.Display.print(WiFi.localIP().toString());
         delay(600);
         return true;
@@ -1629,16 +1739,16 @@ void drawFileList() {
     wakePlayerDisplay();
     M5Cardputer.Display.fillScreen(C_BG);
     drawHeader("Library");
-    fillPanel(8, 24, SCREEN_W - 16, 94, C_PANEL, C_EDGE, 10);
-    int listTop = 34;
-    if (!fileSearchQuery.isEmpty()) {
-        M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-        M5Cardputer.Display.setCursor(16, 34);
-        M5Cardputer.Display.print("Search: " + displayFit(fileSearchQuery, SCREEN_W - 36));
-        listTop = 46;
-    }
+    String location = currentUrl.isEmpty() ? "NAS ROOT" : fileNameFromUrl(currentUrl);
+    M5Cardputer.Display.setTextColor(C_DIM, C_BG);
+    M5Cardputer.Display.setCursor(9, 25);
+    String subtitle = fileSearchQuery.isEmpty() ? location : ("Search: " + fileSearchQuery);
+    M5Cardputer.Display.print(displayFit(subtitle, 176));
+    M5Cardputer.Display.setCursor(205, 25);
+    M5Cardputer.Display.print(String(entries.size()));
 
-    int visible = fileSearchQuery.isEmpty() ? 6 : 5;
+    int listTop = 40;
+    int visible = 6;
     if (selected < scrollTop) {
         scrollTop = selected;
     }
@@ -1651,29 +1761,24 @@ void drawFileList() {
         if (idx >= static_cast<int>(entries.size())) {
             break;
         }
-        int y = listTop + row * 12;
+        int y = listTop + row * 13;
         bool sel = idx == selected;
-        fillPanel(14, y, SCREEN_W - 28, 10, sel ? C_SELECT : C_PANEL_ALT, sel ? C_SELECT : C_EDGE, 5);
-        uint16_t rowBg = sel ? C_SELECT : C_PANEL_ALT;
-        uint16_t fg = sel ? C_BG : (entries[idx].dir ? C_ACCENT : C_TEXT);
-        String kind = entries[idx].dir ? "DIR" : "MP3";
-        if (entries[idx].parent) {
-            kind = "UP";
-        }
+        uint16_t rowBg = sel ? C_SELECT : C_PANEL;
+        M5Cardputer.Display.fillRoundRect(8, y, 224, 12, 5, rowBg);
+        uint16_t fg = sel ? C_TEXT : (entries[idx].dir ? C_ACCENT : C_TEXT);
         M5Cardputer.Display.setTextColor(fg, rowBg);
-        M5Cardputer.Display.setCursor(20, y + 1);
-        M5Cardputer.Display.print(kind);
-        M5Cardputer.Display.setCursor(52, y + 1);
-        M5Cardputer.Display.print(displayFit(entries[idx].name, SCREEN_W - 94));
+        M5Cardputer.Display.setCursor(16, y + 2);
+        String label = entries[idx].parent ? "Back" : entries[idx].name;
+        M5Cardputer.Display.print(displayFit(label, 205));
     }
 
     if (entries.empty()) {
-        M5Cardputer.Display.setTextColor(C_WARN, C_PANEL);
-        M5Cardputer.Display.setCursor(16, 76);
-        M5Cardputer.Display.print("No matching files");
+        M5Cardputer.Display.setTextColor(C_WARN, C_BG);
+        M5Cardputer.Display.setCursor(68, 70);
+        M5Cardputer.Display.print("No matching audio");
     }
 
-    drawFooter("Enter open   f search   h help");
+    drawFooter("Enter Open     H More");
     needsRedraw = false;
 }
 
@@ -1791,36 +1896,34 @@ void startPlayback(int index, uint32_t offset, bool fallbackToZero) {
     needsRedraw = true;
 }
 
-String timerText() {
+String timerRemainingText() {
     if (shutdownAt == 0) {
-        return "timer off";
+        return "";
     }
     int32_t left = static_cast<int32_t>(shutdownAt - millis());
     if (left <= 0) {
-        return "shutting down";
+        return "NOW";
     }
-    uint32_t sec = left / 1000;
-    return String(sec / 60) + "m left";
+    uint32_t minutes = (static_cast<uint32_t>(left) + 59999UL) / 60000UL;
+    return String(minutes) + "M";
 }
 
 void drawPlayer() {
     M5Cardputer.Display.fillScreen(C_BG);
-    drawHeader("Playing");
-    fillPanel(8, 24, SCREEN_W - 16, 28, C_PANEL, C_EDGE, 10);
-    M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-    M5Cardputer.Display.setCursor(16, 33);
-    M5Cardputer.Display.print(displayFit(currentTrackName, SCREEN_W - 72));
-    M5Cardputer.Display.setTextColor(powerSaveEnabled ? C_GOOD : C_SOFT, C_PANEL);
-    M5Cardputer.Display.setCursor(186, 33);
-    M5Cardputer.Display.print(powerSaveEnabled ? "ECO" : "ECO-");
+    drawHeader("Now Playing");
+    drawBrandMark(10, 27, 42);
+    M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
+    M5Cardputer.Display.setCursor(62, 29);
+    M5Cardputer.Display.print(displayFit(currentTrackName, 166));
+    M5Cardputer.Display.setTextColor(C_DIM, C_BG);
+    M5Cardputer.Display.setCursor(62, 47);
+    M5Cardputer.Display.print("NAS Audio");
 
-    fillPanel(8, 58, SCREEN_W - 16, 30, C_PANEL, C_EDGE, 10);
-    fillPanel(8, 92, SCREEN_W - 16, 20, C_PANEL_ALT, C_EDGE, 8);
-    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL_ALT);
-    M5Cardputer.Display.setCursor(16, 98);
-    M5Cardputer.Display.print("VOL");
+    M5Cardputer.Display.setTextColor(C_DIM, C_BG);
+    M5Cardputer.Display.setCursor(10, 105);
+    M5Cardputer.Display.print("Volume");
 
-    drawFooter("h help");
+    drawFooter("Space Play/Pause     H More");
 
     lastPlayerPosShown = UINT32_MAX;
     lastPlayerSizeShown = UINT32_MAX;
@@ -1838,7 +1941,7 @@ void drawPlayerDynamic(bool force) {
     }
     uint32_t pos = currentPlaybackPos();
     uint32_t size = currentPlaybackSize();
-    String timer = timerText();
+    String timer = timerRemainingText();
     String stateText = mp3 && mp3->isRunning() ? "PLAY" : (currentTrackUrl.isEmpty() ? "STOP" : "READY");
     String progressText;
     String progressPct = "--";
@@ -1856,58 +1959,59 @@ void drawPlayerDynamic(bool force) {
     }
 
     if (force || pos != lastPlayerPosShown || size != lastPlayerSizeShown) {
-        drawMeter(16, 76, SCREEN_W - 32, 6, 0, C_ACCENT);
+        drawMeter(62, 91, 166, 4, 0, C_ACCENT);
         if (size > 0) {
-            int fill = static_cast<int>((static_cast<uint64_t>(SCREEN_W - 36) * pos) / size);
-            drawMeter(16, 76, SCREEN_W - 32, 6, fill, C_ACCENT);
+            int fill = static_cast<int>((static_cast<uint64_t>(166) * pos) / size);
+            drawMeter(62, 91, 166, 4, fill, C_ACCENT);
         }
-        M5Cardputer.Display.fillRect(62, 66, 74, 8, C_PANEL);
-        M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
-        M5Cardputer.Display.setCursor(62, 66);
-        M5Cardputer.Display.print(displayFit(progressText, 72));
-        M5Cardputer.Display.fillRect(140, 66, 30, 8, C_PANEL);
-        M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-        M5Cardputer.Display.setCursor(140, 66);
-        M5Cardputer.Display.print(displayFit(progressPct, 28));
+        M5Cardputer.Display.fillRect(62, 78, 130, 9, C_BG);
+        M5Cardputer.Display.setTextColor(C_DIM, C_BG);
+        M5Cardputer.Display.setCursor(62, 78);
+        M5Cardputer.Display.print(displayFit(progressText, 128));
+        M5Cardputer.Display.fillRect(199, 78, 29, 9, C_BG);
+        M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
+        M5Cardputer.Display.setCursor(199, 78);
+        M5Cardputer.Display.print(displayFit(progressPct, 29));
         lastPlayerPosShown = pos;
         lastPlayerSizeShown = size;
     }
 
     if (force || volume != lastPlayerVolumeShown) {
-        int volFill = (94 * volume) / 255;
-        drawMeter(44, 99, 94, 6, volFill, C_SELECT);
-        M5Cardputer.Display.fillRect(146, 97, 28, 8, C_PANEL_ALT);
-        M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL_ALT);
-        M5Cardputer.Display.setCursor(146, 97);
+        int volFill = (120 * volume) / 255;
+        drawMeter(62, 109, 120, 4, volFill, C_SELECT);
+        M5Cardputer.Display.fillRect(194, 105, 34, 9, C_BG);
+        M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
+        M5Cardputer.Display.setCursor(194, 105);
         M5Cardputer.Display.print(String((volume * 100) / 255) + "%");
         lastPlayerVolumeShown = volume;
     }
 
     if (force || stateText != lastPlayerStateShown) {
-        M5Cardputer.Display.fillRect(16, 66, 40, 8, C_PANEL);
-        M5Cardputer.Display.setTextColor(stateText == "PLAY" ? C_GOOD : (stateText == "READY" ? C_ACCENT : C_WARN),
-                                         C_PANEL);
-        M5Cardputer.Display.setCursor(16, 66);
-        M5Cardputer.Display.print(stateText);
+        M5Cardputer.Display.fillRect(8, 75, 46, 18, C_BG);
+        uint16_t stateColor = stateText == "PLAY" ? C_GOOD : (stateText == "READY" ? C_ACCENT : C_WARN);
+        drawStatusBadge(9, 77, 44, stateText, stateColor, true);
         lastPlayerStateShown = stateText;
     }
 
     if (force || timer != lastPlayerTimerShown) {
-        M5Cardputer.Display.fillRect(176, 66, 48, 8, C_PANEL);
-        M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-        M5Cardputer.Display.setCursor(176, 66);
-        M5Cardputer.Display.print(displayFit(timer, 46));
+        bool timerEnabled = shutdownAt != 0;
+        uint16_t timerColor = timerEnabled ? C_GOOD : C_WARN;
+        M5Cardputer.Display.fillRect(111, 61, 117, 15, C_BG);
+        drawStatusBadge(111, 61, 58, "TIMER", timerColor);
+        if (timerEnabled) {
+            M5Cardputer.Display.setTextColor(C_GOOD, C_BG);
+            M5Cardputer.Display.setCursor(181, 64);
+            M5Cardputer.Display.print(displayFit(timer, 38));
+        }
         lastPlayerTimerShown = timer;
     }
 
     static int lastEcoShown = -1;
     int ecoState = powerSaveEnabled ? (playerDimmed ? 2 : 1) : 0;
     if (force || ecoState != lastEcoShown) {
-        M5Cardputer.Display.fillRect(186, 33, 38, 8, C_PANEL);
-        M5Cardputer.Display.setTextColor(
-            ecoState == 2 ? C_WARN : (ecoState == 1 ? C_GOOD : C_SOFT), C_PANEL);
-        M5Cardputer.Display.setCursor(186, 33);
-        M5Cardputer.Display.print(ecoState == 0 ? "ECO-" : (ecoState == 2 ? "ECOZ" : "ECO"));
+        uint16_t ecoColor = ecoState == 2 ? C_WARN : (ecoState == 1 ? C_GOOD : C_DIM);
+        M5Cardputer.Display.fillRect(62, 61, 44, 14, C_BG);
+        drawStatusBadge(62, 61, 44, ecoState == 2 ? "DIM" : "ECO", ecoColor);
         lastEcoShown = ecoState;
     }
 
@@ -1918,67 +2022,78 @@ void drawPlayerDynamic(bool force) {
     String clock = headerClockText();
     if (force || wifiBars != lastHeaderWifiBars || wifiConnected != lastHeaderWifiConnected
         || battery != lastHeaderBattery || charging != lastHeaderCharging || clock != lastHeaderClockShown) {
-        drawHeader("Playing");
+        drawHeader("Now Playing");
     }
     lastPlayerRedraw = millis();
 }
 
 void drawHelpOverlay() {
-    fillPanel(14, 20, SCREEN_W - 28, SCREEN_H - 40, C_PANEL, C_ACCENT, 10);
-    M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
-    M5Cardputer.Display.setCursor(24, 28);
-    M5Cardputer.Display.print("Help");
-    M5Cardputer.Display.fillRect(24, 40, 34, 2, C_ACCENT);
-
-    int y = 50;
-    auto line = [&](const String &text) {
-        M5Cardputer.Display.setCursor(26, y);
-        M5Cardputer.Display.print(displayFit(text, SCREEN_W - 52));
-        y += 14;
+    M5Cardputer.Display.fillScreen(C_BG);
+    drawHeader("Controls");
+    drawSurface(9, 25, 222, 90);
+    int y = 35;
+    auto line = [&](const String &key, const String &text) {
+        M5Cardputer.Display.setTextColor(C_ACCENT, C_PANEL);
+        M5Cardputer.Display.setCursor(20, y);
+        M5Cardputer.Display.print(displayFit(key, 44));
+        M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
+        M5Cardputer.Display.setCursor(72, y);
+        M5Cardputer.Display.print(displayFit(text, 145));
+        y += 18;
     };
 
     switch (screen) {
         case Screen::FileList:
-            line("w/s move   Enter open");
-            line("f search   r reload");
-            line("n NAS      q WiFi");
-            line("t timer    h close");
+            line("W / S", "Navigate list");
+            line("ENTER", "Open selection");
+            line("F / R", "Find / refresh");
+            line("N/Q/T", "NAS / WiFi / timer");
             break;
         case Screen::Player:
-            line("Space play  +/- vol");
-            line("Fn+,/. seek n/p track");
-            line("b list      q WiFi");
-            line("m eco       t timer");
+            line("SPACE", "Play / pause");
+            line("+ / -", "Adjust volume");
+            line("N / P", "Next / previous");
+            line("B/M/T", "Library / eco / timer");
             break;
         case Screen::WifiList:
-            line("w/s move   Enter join");
-            line("r rescan   Tab back");
+            line("W / S", "Navigate networks");
+            line("ENTER", "Connect");
+            line("R", "Rescan networks");
+            line("TAB", "Return");
             break;
         default:
-            line("Enter confirm");
-            line("Tab back    Del erase");
+            line("ENTER", "Confirm");
+            line("TAB", "Return");
+            line("DEL", "Erase");
             break;
     }
 
-    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
-    M5Cardputer.Display.setCursor(26, SCREEN_H - 30);
-    M5Cardputer.Display.print("Any key closes");
+    drawFooter("Any Key Close");
 }
 
 void drawTimerMenu() {
     static const char *labels[] = {"Off", "15 min", "30 min", "1 hour", "2 hours"};
     M5Cardputer.Display.fillScreen(C_BG);
     drawHeader("Sleep timer");
-    fillPanel(22, 26, SCREEN_W - 44, 86, C_PANEL, C_EDGE, 10);
+    M5Cardputer.Display.setTextColor(C_DIM, C_BG);
+    M5Cardputer.Display.setCursor(9, 25);
+    M5Cardputer.Display.print(shutdownAt == 0 ? "Turn off playback automatically"
+                                              : ("Remaining: " + timerRemainingText()));
     for (int i = 0; i < 5; ++i) {
-        int y = 34 + i * 14;
+        int y = 40 + i * 15;
         bool sel = i == timerSelected;
-        fillPanel(32, y, SCREEN_W - 64, 12, sel ? C_SELECT : C_PANEL_ALT, sel ? C_SELECT : C_EDGE, 5);
-        M5Cardputer.Display.setTextColor(sel ? C_BG : C_TEXT, sel ? C_SELECT : C_PANEL_ALT);
-        M5Cardputer.Display.setCursor(42, y + 2);
+        uint16_t rowBg = sel ? C_SELECT : C_PANEL;
+        M5Cardputer.Display.fillRoundRect(8, y, 224, 13, 5, rowBg);
+        M5Cardputer.Display.setTextColor(C_TEXT, rowBg);
+        M5Cardputer.Display.setCursor(17, y + 2);
         M5Cardputer.Display.print(labels[i]);
+        if (sel) {
+            M5Cardputer.Display.setTextColor(C_TEXT, rowBg);
+            M5Cardputer.Display.setCursor(181, y + 2);
+            M5Cardputer.Display.print("Selected");
+        }
     }
-    drawFooter("Enter set   Tab back");
+    drawFooter("Enter Set     Tab Back");
     needsRedraw = false;
 }
 
@@ -1994,9 +2109,16 @@ void shutdownNow() {
     stopPlayback();
     M5Cardputer.Display.fillScreen(C_BG);
     drawHeader("Power");
-    M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
-    M5Cardputer.Display.setCursor(6, 54);
-    M5Cardputer.Display.print("Auto shutdown");
+    drawSurface(35, 38, 170, 58);
+    M5Cardputer.Display.fillCircle(58, 67, 12, C_ACCENT);
+    M5Cardputer.Display.drawCircle(58, 67, 6, C_TEXT);
+    M5Cardputer.Display.drawFastVLine(58, 56, 10, C_TEXT);
+    M5Cardputer.Display.setTextColor(C_TEXT, C_PANEL);
+    M5Cardputer.Display.setCursor(80, 54);
+    M5Cardputer.Display.print("Shutting down");
+    M5Cardputer.Display.setTextColor(C_DIM, C_PANEL);
+    M5Cardputer.Display.setCursor(80, 73);
+    M5Cardputer.Display.print("Sleep timer");
     delay(300);
     WiFi.disconnect(true, false);
     M5Cardputer.Speaker.stop();
@@ -2052,11 +2174,7 @@ void handleInput(const KeyEvent &key) {
         needsRedraw = true;
     } else if (inputMode == InputMode::NasUrl) {
         String url = normalizeNasUrl(inputText);
-        M5Cardputer.Display.fillScreen(C_BG);
-        drawHeader("NAS");
-        M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
-        M5Cardputer.Display.setCursor(6, 52);
-        M5Cardputer.Display.print("Loading files...");
+        drawBusyScreen("Library", "Loading files");
         if (loadDirectory(url)) {
             savedNas = currentUrl;
             screen = Screen::FileList;
@@ -2131,11 +2249,7 @@ void handleFileList(const KeyEvent &key) {
         return;
     }
     if (charInEvent(key, 'r')) {
-        M5Cardputer.Display.fillScreen(C_BG);
-        drawHeader("NAS");
-        M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
-        M5Cardputer.Display.setCursor(6, 52);
-        M5Cardputer.Display.print("Reloading...");
+        drawBusyScreen("Library", "Refreshing");
         if (!loadDirectory(currentUrl)) {
             showMessage("NAS failed", "Reload failed", 1200, Screen::FileList);
         } else {
@@ -2159,11 +2273,7 @@ void handleFileList(const KeyEvent &key) {
     if (key.enter && selected >= 0 && selected < static_cast<int>(entries.size())) {
         if (entries[selected].dir) {
             String url = entries[selected].url;
-            M5Cardputer.Display.fillScreen(C_BG);
-            drawHeader("NAS");
-            M5Cardputer.Display.setTextColor(C_TEXT, C_BG);
-            M5Cardputer.Display.setCursor(6, 52);
-            M5Cardputer.Display.print("Opening folder...");
+            drawBusyScreen("Library", "Opening folder");
             if (!loadDirectory(url)) {
                 showMessage("NAS failed", "No MP3 files found", 1400, Screen::FileList);
             } else {
