@@ -13,7 +13,7 @@ The player keeps the last track URL, byte position, volume, and eco-mode setting
 - The playback screen uses partial redraws instead of full-screen refreshes to reduce visible flicker, and the help panel blocks background progress updates cleanly.
 - File list and WiFi list use the same dark panel layout with simpler list-first presentation.
 - Shortcut details are hidden by default; press `h` to open the shortcut panel.
-<img width="600" height="800" alt="a5b37ddd-88fb-4317-a571-162c10b0c54a" src="https://github.com/user-attachments/assets/282af461-98c5-47ca-842a-261e98d01f44" />
+<img width="800" height="600" alt="a5b37ddd-88fb-4317-a571-162c10b0c54a" src="https://github.com/user-attachments/assets/282af461-98c5-47ca-842a-261e98d01f44" />
 
 ## Power Saving
 
